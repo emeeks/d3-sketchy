@@ -21,6 +21,7 @@ The circles and rects work in a pretty straightforward manner similar to the SVG
       d3.select("#someParent").call(sketchyRectangle);
 
 Likewise for a circle:
+
       var sketchyCircle = d3.sketchy.circle();
       sketchyCircle
       .radius(15)
