@@ -1,0 +1,258 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Awesome Charting</title>
+  <meta charset="utf-8" />
+</head>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="d3.sketchy.js"></script>
+<script src="http://d3js.org/colorbrewer.v1.min.js"></script>
+<style>
+  
+  rect.extent {
+    fill: gray;
+  }
+</style>
+<body onload="sketchyDashboard()">
+  <footer>
+<script>
+function sketchyDashboard() {
+  d3.select("body").append("svg").attr("id", "leftSVG").style("width", "50%").style("height", "40%").style("background", "#FCFCFC");
+  d3.select("body").append("svg").attr("id", "rightSVG").style("width", "50%").style("height", "40%").style("background", "#FCFCFC");
+  d3.select("body").append("div").attr("id", "brush").style("overflow", "auto").style("width", "100%").style("height", "20%").style("background", "#FCFCFC");
+  
+  window.onresize = function(event) {
+      redraw();
+  }
+  
+  function hover(hoverD) {
+    d3.selectAll("circle.pack").filter(function (d) {return d == hoverD}).style("fill", d3.sketchy.randomColor("blue",.05));
+    d3.selectAll("g.bar > rect").filter(function (d) {return d == hoverD}).style("fill", d3.sketchy.randomColor("blue",.05));
+    d3.selectAll("g.bar > rect").filter(function (d) {return d.values.indexOf(hoverD) > -1}).style("fill", d3.sketchy.randomColor("blue",.05));
+    }
+
+  function mouseOut() {
+    d3.selectAll("circle.pack").style("fill", function(d) {return d3.sketchy.randomColor(depthScale(d.depth),.04)});
+    d3.selectAll("g.bar > rect").style("fill", d3.sketchy.randomColor("teal",.02)).style("stroke-width", 0);
+  }
+  
+  d3.json("tweets.json",function(error,data) {main(data.tweets)});
+
+  function main(incData) {
+    
+  var nestedTweets = d3.nest()
+    .key(function (el) {return el.user})
+    .entries(incData);
+
+    packableTweets = {id: "root", values: nestedTweets}
+
+    createBar(nestedTweets, "#rightSVG");
+    createPack(packableTweets, "#leftSVG");
+    createBrush(incData);
+    redraw();
+  }
+  
+  function createBrush(incData) {
+    timeRange = d3.extent(incData.map(function(d) {return new Date(d.timestamp)}));
+    timeScale = d3.time.scale().domain(timeRange).range([0,1000]);
+    
+    timeAxis = d3.svg.axis()
+    .scale(timeScale)
+    .orient('bottom')
+    .ticks(d3.time.hours, 2)
+    .tickFormat(d3.time.format('%I%p'));
+    
+    timeBrush = d3.svg.brush()
+                    .x(timeScale)
+                    .on("brush", brushed);
+
+    
+    var brushSVG = d3.select("#brush").append("svg").attr("height", "100%").attr("width", "100%");
+    brushSVG.append("g").attr("transform", "translate(0,100)").attr("id", "brushAxis").call(timeAxis);
+    brushSVG.append("g").attr("transform", "translate(0,50)").attr("id", "brushG").call(timeBrush)
+    .selectAll("rect").attr("height", 50);
+    
+    
+    function brushed() {
+      var rightSize = canvasSize("#rightSVG");
+      var e = timeBrush.extent();
+      d3.selectAll("g.pack").filter(function(d){return d.depth == 2})
+      .style("display", function (d) {
+        return new Date(d.timestamp) >= e[0] && new Date(d.timestamp) <= e[1] ? "block" : "none"
+        });
+
+      d3.select("#rightSVG")
+      .selectAll("g.bar")
+      .each(function (d,i) {
+        d3.select(this).selectAll("*").remove();
+         var x = barXScale(d.key) + 5;
+      var y = barYScale(filteredLength(d));
+      var rw = barXScale.rangeBand() - 5;
+      var rh = rightSize[1] - barYScale(filteredLength(d));
+      var sketchyBar = d3.sketchy.rect();
+      sketchyBar
+      .height(rh)
+      .width(rw)
+      .x(x)
+      .y(y)
+      .fill(d3.sketchy.randomColor("teal",.02))
+      .stroke("black")
+      .strokeWidth(10)
+      .jostle(5)
+      d3.select(this).call(sketchyBar);
+        })
+
+        gnarlifyBar();
+      
+      function filteredLength(d) {
+        var filteredValues = d.values.filter(function (p) {
+          return new Date(p.timestamp) >= e[0] && new Date(p.timestamp) <= e[1]
+        })
+        return filteredValues.length;
+      }
+
+    }
+    
+  }
+  
+  function canvasSize(targetElement) {
+    var newHeight = parseFloat(d3.select(targetElement).node().clientHeight);
+    var newWidth = parseFloat(d3.select(targetElement).node().clientWidth);
+    return [newWidth,newHeight];
+  }
+  
+  function redraw() {
+      var leftSize = canvasSize("#leftSVG");
+      packChart.size(leftSize)
+
+      d3.select("#leftSVG")
+      .selectAll("g")
+      .data(packChart(packableTweets));
+      
+      gnarlifyPack();
+      gnarlifyBar();
+      
+      var rectNumber = d3.select("#rightSVG").selectAll("g.bar").size();
+      var rectData = d3.select("#rightSVG").selectAll("g.bar").data();
+      var rectMax = d3.max(rectData, function(d) {return d.values.length});
+      
+      var rightSize = canvasSize("#rightSVG");
+
+      barXScale = d3.scale.ordinal().domain(rectData.map(function(d){return d.key})).rangeBands([0, rightSize[0]]);
+
+      barYScale = d3.scale.linear()
+      .domain([0, rectMax])
+      .range([rightSize[1],20])
+
+    timeTickScale = d3.scale.linear().domain([0,1000]).rangeRound([10,1]).clamp(true);
+    var bExtent = timeBrush.extent();
+    timeScale.range([0,rightSize[0] + leftSize[0]]);
+    timeAxis.scale(timeScale).ticks(d3.time.hours, timeTickScale((rightSize[0] + leftSize[0])));
+    timeBrush.x(timeScale);
+
+      d3.select("#rightSVG")
+      .selectAll("g.bar")
+      .each(function (d,i) {
+        d3.select(this).selectAll("*").remove();
+         var x = barXScale(d.key) + 5;
+      var y = barYScale(d.values.length);
+      var rw = barXScale.rangeBand() - 5;
+      var rh = rightSize[1] - barYScale(d.values.length);
+      var sketchyBar = d3.sketchy.rect();
+      sketchyBar
+      .height(rh)
+      .width(rw)
+      .x(x)
+      .y(y)
+      .fill(d3.sketchy.randomColor("teal",.02))
+      .stroke("black")
+      .strokeWidth(10)
+      .jostle(5)
+      d3.select(this).call(sketchyBar);
+        })
+        
+    d3.select("#brushAxis").call(timeAxis);
+    d3.select("#brushG").call(timeBrush.extent(bExtent))  ;
+  }
+  
+  function createBar(incData,targetSVG) {
+      
+      d3.select(targetSVG).selectAll("g").data(incData)
+      .enter()
+      .append("g")
+      .attr("class", "bar")
+      .on("mouseover", hover)
+      .on("mouseout", mouseOut);
+      }
+  
+  function createPack(incData,targetSVG) {
+
+      depthScale = d3.scale.quantize().domain([0,1,2]).range(colorbrewer.Reds[3]);
+
+      packChart = d3.layout.pack();
+      packChart.size([500,500])
+      .children(function(d) {return d.values})
+      .value(function(d) {return 1})
+
+      d3.select(targetSVG)
+      .append("g")
+      .attr("transform", "translate(0,0)")
+      .selectAll("g")
+      .data(packChart(incData))
+      .enter()
+      .append("g")
+      .attr("class", "pack")
+      .on("mouseover", hover)
+      .on("mouseout", mouseOut)
+      .append("circle")
+      .attr("class", "pack")
+    }
+    
+    function gnarlify(d,i) {
+      
+      d3.select(this).selectAll("*").remove();
+      var randomWidth = d3.scale.linear().domain([0,1]).range([10,20]);
+      var sketchyCircle = d3.sketchy.circle();
+      sketchyCircle
+      .radius(d.r)
+      .cx(d.x)
+      .cy(d.y)
+      .fill(d3.sketchy.randomColor(depthScale(d.depth),.05))
+      .stroke("black")
+      .strokeWidth(randomWidth(Math.random()));
+      d3.select(this).call(sketchyCircle);
+      d3.select(this).select("circle").attr("class", "pack")
+    }
+    
+    function gnarlifyPack() {
+      d3.selectAll("g.pack").each(gnarlify);
+    }
+
+    function gnarlifyBar() {
+      d3.select("#brushG").select("path.sketchy").remove();
+      var x = parseInt(d3.selectAll("#brushG").select("rect.extent").attr("x"));
+      var y = 0;
+      var rw = parseInt(d3.selectAll("#brushG").select("rect.extent").attr("width"));
+      var rh = parseInt(d3.selectAll("#brushG").select("rect.extent").attr("height"));
+      var sketchyBrush = d3.sketchy.rect();
+      sketchyBrush
+      .height(rh)
+      .width(rw)
+      .x(x)
+      .y(y)
+      .stroke("black")
+      .strokeWidth(10)
+      .jostle(5)
+      
+      d3.select("#brushG").call(sketchyBrush);
+        d3.select("#brushG").select("rect.sketchy").remove();
+        d3.select("#brushG").select("path.sketchy").style("pointer-events","none");
+        d3.select("#brushG").select("rect.extent").style("fill", d3.sketchy.randomColor("pink",.075))
+
+    }
+
+}
+
+</script>
+  </footer>
+</body>
+</html>
